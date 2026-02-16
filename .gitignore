@@ -43,3 +43,6 @@ pnpm-debug.log*
 *.log
 .tmp/
 tmp/
+scripts/db_dumps/
+scripts/*
+migrate_db.sh

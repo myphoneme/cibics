@@ -1,8 +1,9 @@
-﻿from functools import lru_cache
+from functools import lru_cache
 from typing import List
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import URL
 
 
 class Settings(BaseSettings):
@@ -17,11 +18,11 @@ class Settings(BaseSettings):
     )
     api_port: int = 8200
 
-    db_host: str = 'localhost'
+    db_host: str = '10.100.60.113'
     db_port: int = 5432
     db_name: str = 'cibics'
     db_user: str = 'postgres'
-    db_password: str = '123456'
+    db_password: str = 'indian@123'
 
     smtp_host: str = ''
     smtp_port: int = 587
@@ -37,10 +38,14 @@ class Settings(BaseSettings):
     default_assignee_password: str = 'Assignee@123'
 
     @property
-    def database_url(self) -> str:
-        return (
-            f"postgresql+psycopg://{self.db_user}:{self.db_password}@"
-            f"{self.db_host}:{self.db_port}/{self.db_name}"
+    def database_url(self) -> URL:
+        return URL.create(
+            drivername='postgresql+psycopg',
+            username=self.db_user,
+            password=self.db_password,
+            host=self.db_host,
+            port=self.db_port,
+            database=self.db_name,
         )
 
 

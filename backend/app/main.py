@@ -53,6 +53,11 @@ def health():
     return {'status': 'ok'}
 
 
+@app.get(f'{settings.api_v1_prefix}/health')
+def health_v1():
+    return {'status': 'ok'}
+
+
 app.include_router(auth.router, prefix=settings.api_v1_prefix)
 app.include_router(users.router, prefix=settings.api_v1_prefix)
 app.include_router(records.router, prefix=settings.api_v1_prefix)
