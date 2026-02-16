@@ -178,8 +178,7 @@ setup_backend() {
   cd "${BACKEND_DIR}"
 
   if [[ ! -f .env ]]; then
-    cp .env.example .env
-    log "Created backend/.env from .env.example."
+    fail "Missing ${BACKEND_DIR}/.env. Add backend/.env to the project before deployment."
   fi
 
   set_env_force "APP_NAME" "Cibics Tracking API" .env

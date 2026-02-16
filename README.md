@@ -54,7 +54,6 @@ Imported result:
 
 ```powershell
 pip install -r backend\requirements.txt
-Copy-Item backend\.env.example backend\.env
 cd backend
 python run.py
 ```
