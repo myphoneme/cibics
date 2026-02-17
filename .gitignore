@@ -45,3 +45,4 @@ tmp/
 scripts/db_dumps/
 scripts/*
 migrate_db.sh
+.env
