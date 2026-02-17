@@ -45,11 +45,11 @@ export function DashboardPage() {
       ]);
 
       setSummary(summaryRes.data);
-      setStatusSummary(statusRes.data);
+      setStatusSummary(Array.isArray(statusRes.data) ? statusRes.data : []);
 
       if (user?.role !== 'ASSIGNEE') {
         const assigneeRes = await api.get<AssigneeSummary[]>('/dashboard/by-assignee');
-        setAssigneeSummary(assigneeRes.data);
+        setAssigneeSummary(Array.isArray(assigneeRes.data) ? assigneeRes.data : []);
         setAssigneePage(1);
       }
     } catch (error) {

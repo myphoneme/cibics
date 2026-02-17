@@ -1,6 +1,10 @@
 import axios from 'axios';
 
-const baseURL = import.meta.env.VITE_API_URL || '/api/v1';
+const isLocalDev =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+const baseURL = import.meta.env.VITE_API_URL || (isLocalDev ? 'http://localhost:8200/api/v1' : '/api/v1');
 
 export const api = axios.create({
   baseURL,
