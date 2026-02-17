@@ -45,11 +45,12 @@ export function ShellLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         <nav className="sidebar-nav">
-          <NavItem to="/dashboard" label="Dashboard" icon={<IconDashboard />} collapsed={collapsed} />
-          <NavItem to="/records" label="Records" icon={<IconRecords />} collapsed={collapsed} />
+          <NavItem to="/dashboard" label="Dashboard" icon={<IconDashboard />} collapsed={collapsed} end />
+          <NavItem to="/records" label="Records" icon={<IconRecords />} collapsed={collapsed} end />
           {user?.role === 'SUPER_ADMIN' ? (
-            <NavItem to="/users" label="Users" icon={<IconUsers />} collapsed={collapsed} />
+            <NavItem to="/records/excel-upload" label="Excel Upload" icon={<IconUpload />} collapsed={collapsed} end />
           ) : null}
+          <NavItem to="/users" label={user?.role === 'SUPER_ADMIN' ? 'Users' : 'Profile'} icon={<IconUsers />} collapsed={collapsed} end />
         </nav>
       </aside>
 
@@ -82,14 +83,16 @@ function NavItem({
   label,
   icon,
   collapsed,
+  end = false,
 }: {
   to: string;
   label: string;
   icon: React.ReactNode;
   collapsed: boolean;
+  end?: boolean;
 }) {
   return (
-    <NavLink to={to} className="sidebar-link" title={label}>
+    <NavLink to={to} className="sidebar-link" title={label} end={end}>
       <span className="nav-icon">{icon}</span>
       <span className={`nav-label ${collapsed ? 'is-hidden' : ''}`}>{label}</span>
     </NavLink>
@@ -131,6 +134,14 @@ function IconUsers() {
       <path d="M3.5 18a5.5 5.5 0 0 1 11 0" stroke="currentColor" fill="none" strokeWidth="2" strokeLinecap="round" />
       <circle cx="17" cy="9" r="2" stroke="currentColor" fill="none" strokeWidth="2" />
       <path d="M14.5 17.5a4 4 0 0 1 6 0" stroke="currentColor" fill="none" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconUpload() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="svg-icon">
+      <path d="M12 4v10M8 8l4-4 4 4M5 15v3a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-3" stroke="currentColor" fill="none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }

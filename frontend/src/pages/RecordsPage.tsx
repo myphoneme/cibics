@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { api } from '../api/client';
 import { useAuth } from '../auth/AuthContext';
 import { ShellLayout } from '../components/ShellLayout';
+import { useToast } from '../components/ToastProvider';
 import type { PaginatedRecords, RecordItem, StageItem, User } from '../types';
+import { getApiErrorMessage } from '../utils/errors';
 
 interface Draft {
   customer_name: string;
@@ -70,6 +72,7 @@ const DEFAULT_COLUMNS: ColumnKey[] = [
 
 export function RecordsPage() {
   const { user } = useAuth();
+  const toast = useToast();
   const [records, setRecords] = useState<RecordItem[]>([]);
   const [assignees, setAssignees] = useState<User[]>([]);
   const [stages, setStages] = useState<StageItem[]>([]);
@@ -85,7 +88,6 @@ export function RecordsPage() {
   const [assigneeFilter, setAssigneeFilter] = useState<number | ''>('');
   const [alertOnly, setAlertOnly] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [importPath, setImportPath] = useState('../Phoneme.xlsx');
 
   const [newStageCode, setNewStageCode] = useState('');
   const [newStageName, setNewStageName] = useState('');
@@ -93,6 +95,11 @@ export function RecordsPage() {
 
   const [showAllColumns, setShowAllColumns] = useState(false);
   const [selectedColumns, setSelectedColumns] = useState<ColumnKey[]>(DEFAULT_COLUMNS);
+  const [tableScrollWidth, setTableScrollWidth] = useState(0);
+  const bottomScrollerRef = useRef<HTMLDivElement | null>(null);
+  const tableWrapRef = useRef<HTMLDivElement | null>(null);
+  const syncingFromBottomRef = useRef(false);
+  const syncingFromTableRef = useRef(false);
 
   const totalPages = useMemo(() => Math.max(1, Math.ceil(total / pageSize)), [total, pageSize]);
   const allColumnKeys = useMemo(() => COLUMN_OPTIONS.map((column) => column.key), []);
@@ -119,14 +126,45 @@ export function RecordsPage() {
     void loadRecords();
   }, [page, q, statusFilter, assigneeFilter, alertOnly]);
 
+  useEffect(() => {
+    if (user?.role === 'ASSIGNEE') {
+      setAssigneeFilter(user.id);
+    }
+  }, [user?.id, user?.role]);
+
+  useEffect(() => {
+    function updateWidth() {
+      const table = tableWrapRef.current?.querySelector('table');
+      if (!table || !tableWrapRef.current) return;
+      const width = Math.max(table.scrollWidth, tableWrapRef.current.clientWidth + 1);
+      setTableScrollWidth(width);
+    }
+
+    updateWidth();
+    const timer = window.setTimeout(updateWidth, 0);
+    window.addEventListener('resize', updateWidth);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('resize', updateWidth);
+    };
+  }, [records, visibleColumns]);
+
   async function loadAssignees() {
-    const { data } = await api.get<User[]>('/users/assignees');
-    setAssignees(data);
+    try {
+      const { data } = await api.get<User[]>('/users/assignees');
+      setAssignees(data);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to load assignees'));
+    }
   }
 
   async function loadStages() {
-    const { data } = await api.get<StageItem[]>('/records/stages');
-    setStages(data);
+    try {
+      const { data } = await api.get<StageItem[]>('/records/stages');
+      setStages(data);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to load stages'));
+    }
   }
 
   async function loadRecords() {
@@ -144,6 +182,8 @@ export function RecordsPage() {
       const { data } = await api.get<PaginatedRecords>('/records', { params });
       setRecords(data.items);
       setTotal(data.total);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to load records'));
     } finally {
       setLoading(false);
     }
@@ -206,37 +246,57 @@ export function RecordsPage() {
       }));
     }
 
-    await api.patch(`/records/${selected.id}`, payload);
-    setSelected(null);
-    setDraft(null);
-    await loadRecords();
+    try {
+      await api.patch(`/records/${selected.id}`, payload);
+      setSelected(null);
+      setDraft(null);
+      await loadRecords();
+      toast.success('Record updated successfully');
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to update record'));
+    }
   }
 
   async function acknowledgeAlert(recordId: number) {
-    await api.post(`/records/${recordId}/acknowledge-alert`);
-    await loadRecords();
-  }
-
-  async function importWorkbook() {
-    await api.post('/records/import', null, { params: { filepath: importPath } });
-    setPage(1);
-    await loadAssignees();
-    await loadStages();
-    await loadRecords();
+    try {
+      await api.post(`/records/${recordId}/acknowledge-alert`);
+      await loadRecords();
+      toast.success('Alert acknowledged');
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to acknowledge alert'));
+    }
   }
 
   async function createStage() {
     if (!newStageCode.trim() || !newStageName.trim()) return;
 
-    await api.post('/records/stages', {
-      code: newStageCode.trim().toUpperCase(),
-      name: newStageName.trim(),
-      display_order: newStageOrder,
-    });
-    setNewStageCode('');
-    setNewStageName('');
-    setNewStageOrder(100);
-    await loadStages();
+    try {
+      await api.post('/records/stages', {
+        code: newStageCode.trim().toUpperCase(),
+        name: newStageName.trim(),
+        display_order: newStageOrder,
+      });
+      setNewStageCode('');
+      setNewStageName('');
+      setNewStageOrder(100);
+      await loadStages();
+      toast.success('Stage created successfully');
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to create stage'));
+    }
+  }
+
+  async function deleteRecord(item: RecordItem) {
+    const confirmed = window.confirm(`Delete record #${item.id}?`);
+    if (!confirmed) return;
+
+    try {
+      await api.delete(`/records/${item.id}`);
+      await loadRecords();
+      toast.success(`Record #${item.id} deleted`);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to delete record'));
+    }
   }
 
   function toggleAllColumns(checked: boolean) {
@@ -303,6 +363,28 @@ export function RecordsPage() {
     }
   }
 
+  function onBottomScrollerScroll(event: React.UIEvent<HTMLDivElement>) {
+    if (syncingFromTableRef.current) {
+      syncingFromTableRef.current = false;
+      return;
+    }
+    syncingFromBottomRef.current = true;
+    if (tableWrapRef.current) {
+      tableWrapRef.current.scrollLeft = event.currentTarget.scrollLeft;
+    }
+  }
+
+  function onTableScroll(event: React.UIEvent<HTMLDivElement>) {
+    if (syncingFromBottomRef.current) {
+      syncingFromBottomRef.current = false;
+      return;
+    }
+    syncingFromTableRef.current = true;
+    if (bottomScrollerRef.current) {
+      bottomScrollerRef.current.scrollLeft = event.currentTarget.scrollLeft;
+    }
+  }
+
   return (
     <ShellLayout>
       <section className="panel">
@@ -337,13 +419,20 @@ export function RecordsPage() {
               setPage(1);
               setAssigneeFilter(e.target.value ? Number(e.target.value) : '');
             }}
+            disabled={user?.role === 'ASSIGNEE'}
           >
-            <option value="">All Assignees</option>
-            {assignees.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.full_name}
-              </option>
-            ))}
+            {user?.role === 'ASSIGNEE' ? (
+              <option value={user.id}>{user.full_name}</option>
+            ) : (
+              <>
+                <option value="">All Assignees</option>
+                {assignees.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.full_name}
+                  </option>
+                ))}
+              </>
+            )}
           </select>
 
           <label className="checkbox-inline">
@@ -361,13 +450,6 @@ export function RecordsPage() {
 
         {user?.role === 'SUPER_ADMIN' ? (
           <>
-            <div className="import-row">
-              <input value={importPath} onChange={(e) => setImportPath(e.target.value)} />
-              <button className="btn btn-primary" type="button" onClick={importWorkbook}>
-                Import Excel (Overwrite)
-              </button>
-            </div>
-
             <div className="records-toolbar">
               <input
                 placeholder="Stage Code"
@@ -417,7 +499,7 @@ export function RecordsPage() {
           </details>
         </div>
 
-        <div className="table-wrap">
+        <div className="table-wrap" ref={tableWrapRef} onScroll={onTableScroll}>
           <table style={{ minWidth: visibleColumns.length > 10 ? 1400 : 820 }}>
             <thead>
               <tr>
@@ -429,13 +511,21 @@ export function RecordsPage() {
             </thead>
             <tbody>
               {records.map((item) => (
-                <tr key={item.id} className={item.email_alert_pending ? 'row-alert' : ''}>
+                <tr
+                  key={item.id}
+                  className={[
+                    item.client_email?.trim() ? 'row-email-updated' : '',
+                    item.client_email?.trim() && item.email_alert_pending ? 'row-alert-pending' : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                >
                   {visibleColumns.map((column) => (
                     <td key={`${item.id}-${column}`}>{renderCell(item, column)}</td>
                   ))}
                   <td className="action-col">
                     <button className="btn btn-sm" type="button" onClick={() => openEditor(item)}>
-                      Edit
+                      Action
                     </button>
                     {item.email_alert_pending && user?.role !== 'ASSIGNEE' ? (
                       <button
@@ -446,12 +536,20 @@ export function RecordsPage() {
                         Ack
                       </button>
                     ) : null}
+                    {user?.role === 'SUPER_ADMIN' ? (
+                      <button className="btn btn-sm btn-outline" type="button" onClick={() => deleteRecord(item)}>
+                        Delete
+                      </button>
+                    ) : null}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
           {loading ? <p>Loading...</p> : null}
+        </div>
+        <div className="table-scroll-bottom" ref={bottomScrollerRef} onScroll={onBottomScrollerScroll}>
+          <div className="table-scroll-inner" style={{ width: tableScrollWidth }} />
         </div>
 
         <div className="pager">
@@ -483,6 +581,15 @@ export function RecordsPage() {
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <h3>Edit Record #{selected.id}</h3>
             <div className="form-grid two-col">
+              <label className="full-width email-edit-field">
+                Client Email (Add / Edit)
+                <input
+                  type="email"
+                  placeholder="customer@example.com"
+                  value={draft.client_email}
+                  onChange={(e) => setDraft({ ...draft, client_email: e.target.value })}
+                />
+              </label>
               <label>
                 Customer Name
                 <input
@@ -493,13 +600,6 @@ export function RecordsPage() {
               <label>
                 Mobile No
                 <input value={draft.mobile_no} onChange={(e) => setDraft({ ...draft, mobile_no: e.target.value })} />
-              </label>
-              <label>
-                Client Email
-                <input
-                  value={draft.client_email}
-                  onChange={(e) => setDraft({ ...draft, client_email: e.target.value })}
-                />
               </label>
 
               {(user?.role === 'SUPER_ADMIN' || user?.role === 'EMAIL_TEAM') && (
@@ -556,8 +656,12 @@ export function RecordsPage() {
               ) : null}
 
               <label className="full-width">
-                Notes
-                <textarea value={draft.notes} onChange={(e) => setDraft({ ...draft, notes: e.target.value })} />
+                Customer Comments / Notes
+                <textarea
+                  placeholder="Enter call summary, customer remarks, next follow-up details..."
+                  value={draft.notes}
+                  onChange={(e) => setDraft({ ...draft, notes: e.target.value })}
+                />
               </label>
             </div>
 

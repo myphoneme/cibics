@@ -36,6 +36,12 @@ class UserUpdate(BaseModel):
     password: str | None = Field(default=None, min_length=8, max_length=128)
 
 
+class UserSelfUpdate(BaseModel):
+    full_name: str | None = Field(default=None, min_length=2, max_length=120)
+    current_password: str | None = None
+    new_password: str | None = Field(default=None, min_length=8, max_length=128)
+
+
 class UserOut(UserBase):
     id: int
     created_at: datetime
@@ -148,6 +154,33 @@ class ImportResponse(BaseModel):
     created: int
     updated: int
     assignees_created: int
+
+
+class ImportPreviewRow(BaseModel):
+    source_row: int
+    sl_no: str | None
+    short_name: str | None
+    custodian_organization: str | None
+    state: str | None
+    custodian_code: str | None
+    unlo_code: str | None
+    duplicate: bool
+    duplicate_reasons: list[str]
+
+
+class ImportPreviewResponse(BaseModel):
+    total_rows: int
+    duplicate_rows: int
+    insertable_rows: int
+    preview_rows: list[ImportPreviewRow]
+
+
+class ImportUploadResponse(BaseModel):
+    imported: int
+    created: int
+    updated: int
+    assignees_created: int
+    skipped_duplicates: int
 
 
 class DashboardSummary(BaseModel):

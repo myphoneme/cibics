@@ -2,12 +2,15 @@
 import { Navigate, useNavigate } from 'react-router-dom';
 
 import { useAuth } from '../auth/AuthContext';
+import { useToast } from '../components/ToastProvider';
+import { getApiErrorMessage } from '../utils/errors';
 
 export function LoginPage() {
   const { user, login } = useAuth();
+  const toast = useToast();
   const navigate = useNavigate();
-  const [email, setEmail] = useState('admin@cibics.local');
-  const [password, setPassword] = useState('Admin@123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -21,9 +24,12 @@ export function LoginPage() {
     setLoading(true);
     try {
       await login(email, password);
+      toast.success('Login successful');
       navigate('/dashboard');
-    } catch {
-      setError('Login failed. Verify email/password.');
+    } catch (error) {
+      const message = getApiErrorMessage(error, 'Login failed. Verify email/password.');
+      setError(message);
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -32,7 +38,7 @@ export function LoginPage() {
   return (
     <div className="login-page">
       <div className="login-card">
-        <h1>Follow-up Tracker</h1>
+        <h1>CIBICS</h1>
         <p>Track assignee progress, client emails, and feasibility pipeline.</p>
 
         <form onSubmit={onSubmit} className="form-grid">

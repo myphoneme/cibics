@@ -1,16 +1,18 @@
-﻿from datetime import datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.deps import require_roles
-from app.importers.excel_importer import import_phoneme_excel
+from app.importers.excel_importer import analyze_phoneme_excel_bytes, import_phoneme_excel_bytes
 from app.models import Record, RecordStageStatus, RecordUpdateLog, Role, StageDefinition, User
 from app.schemas import (
-    ImportResponse,
+    ImportPreviewResponse,
+    ImportUploadResponse,
     PaginatedRecords,
     RecordOut,
     RecordPatch,
@@ -162,23 +164,50 @@ def update_stage(
     return stage
 
 
-@router.post('/import', response_model=ImportResponse)
-def import_records(
-    filepath: str = Query('../Phoneme.xlsx'),
+@router.post('/import/preview', response_model=ImportPreviewResponse)
+def preview_import_records(
+    file: UploadFile = File(...),
+    preview_limit: int = Query(default=200, ge=1, le=500),
     db: Session = Depends(get_db),
     _admin: User = Depends(require_roles(Role.SUPER_ADMIN)),
 ):
-    target = Path(filepath)
-    if not target.is_absolute():
-        target = Path.cwd() / filepath
+    if not file.filename.lower().endswith('.xlsx'):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Please upload an .xlsx file')
 
     try:
-        result = import_phoneme_excel(db, str(target.resolve()))
-        return ImportResponse(**result)
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+        content = file.file.read()
+        result = analyze_phoneme_excel_bytes(db, content, preview_limit=preview_limit)
+        return ImportPreviewResponse(**result)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@router.post('/import/upload', response_model=ImportUploadResponse)
+def upload_import_records(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_roles(Role.SUPER_ADMIN)),
+):
+    if not file.filename.lower().endswith('.xlsx'):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail='Please upload an .xlsx file')
+
+    try:
+        content = file.file.read()
+        result = import_phoneme_excel_bytes(db, content)
+        return ImportUploadResponse(**result)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@router.get('/import/template')
+def download_import_template(
+    _admin: User = Depends(require_roles(Role.SUPER_ADMIN)),
+):
+    project_root = Path(__file__).resolve().parents[3]
+    template_path = project_root / 'Phoneme.xlsx'
+    if not template_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Template not found')
+    return FileResponse(path=str(template_path), filename='Phoneme.xlsx')
 
 
 @router.get('', response_model=PaginatedRecords)
@@ -197,7 +226,13 @@ def list_records(
     filters = [Record.is_active.is_(True)]
 
     if current_user.role == Role.ASSIGNEE:
+        if assignee_id is not None and assignee_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail='You are not authorized to filter records for another assignee',
+            )
         filters.append(Record.assignee_id == current_user.id)
+        assignee_id = None
 
     if assignee_id is not None:
         filters.append(Record.assignee_id == assignee_id)
@@ -241,6 +276,23 @@ def list_records(
     )
 
     return PaginatedRecords(total=total, page=page, page_size=page_size, items=[_serialize_record(item) for item in items])
+
+
+@router.delete('/{record_id}', status_code=status.HTTP_204_NO_CONTENT)
+def delete_record(
+    record_id: int,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_roles(Role.SUPER_ADMIN)),
+):
+    record = db.query(Record).filter(Record.id == record_id, Record.is_active.is_(True)).first()
+    if not record:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Record not found')
+
+    record.is_active = False
+    record.deleted_by = admin.id
+    record.deleted_at = datetime.now(timezone.utc)
+    record.updated_by = admin.id
+    db.commit()
 
 
 @router.get('/{record_id}', response_model=RecordOut)

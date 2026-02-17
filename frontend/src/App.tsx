@@ -2,6 +2,7 @@
 
 import { useAuth } from './auth/AuthContext';
 import { DashboardPage } from './pages/DashboardPage';
+import { ExcelUploadPage } from './pages/ExcelUploadPage';
 import { LoginPage } from './pages/LoginPage';
 import { RecordsPage } from './pages/RecordsPage';
 import { UsersPage } from './pages/UsersPage';
@@ -37,6 +38,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <RecordsPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/records/excel-upload"
+        element={
+          <ProtectedRoute>
+            <ExcelUploadPage />
           </ProtectedRoute>
         }
       />

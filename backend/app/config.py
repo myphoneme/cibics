@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import List
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import URL
 
@@ -26,11 +26,10 @@ class Settings(BaseSettings):
 
     smtp_host: str = ''
     smtp_port: int = 587
-    smtp_username: str = ''
+    smtp_username: str = Field(default='', validation_alias=AliasChoices('SMTP_USERNAME', 'SMTP_USER'))
     smtp_password: str = ''
     smtp_use_tls: bool = True
     smtp_from_email: str = 'noreply@cibics.local'
-    email_alert_recipients: List[str] = Field(default_factory=list)
 
     default_super_admin_name: str = 'Super Admin'
     default_super_admin_email: str = 'admin@cibics.local'

@@ -1,4 +1,5 @@
-﻿from datetime import datetime, timezone
+from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,17 @@ EXCEL_STAGE_MAP = {
     'Proposal sent': 'PROPOSAL_SENT',
     'Po received': 'PO_RECEIVED',
 }
+
+DUPLICATE_KEY_FIELDS = (
+    'sl_no',
+    'custodian_code',
+    'unlo_code',
+    'short_name',
+    'custodian_organization',
+    'state',
+    'site_address',
+    'pincode',
+)
 
 
 def _to_text(value: Any) -> str | None:
@@ -59,6 +71,11 @@ def _is_default_status(value: str | None) -> bool:
     normalized = value.strip().lower().replace('-', ' ').replace('_', ' ')
     normalized = ' '.join(normalized.split())
     return normalized in {'po received', 'po recieve', 'po recieved', 'po-received'}
+
+
+def _duplicate_key_from_values(values: dict[str, Any]) -> tuple[str, ...] | None:
+    key = tuple((str(values.get(field) or '').strip().lower()) for field in DUPLICATE_KEY_FIELDS)
+    return key if any(key) else None
 
 
 def ensure_assignee_users(db: Session, names: set[str]) -> int:
@@ -111,17 +128,7 @@ def _assignee_by_name(db: Session, name: str | None) -> User | None:
     )
 
 
-def import_phoneme_excel(db: Session, filepath: str) -> dict[str, int]:
-    path = Path(filepath)
-    if not path.exists():
-        raise FileNotFoundError(f'File not found: {path}')
-
-    ensure_default_stages(db)
-    active_stages = get_active_stages(db)
-
-    wb = load_workbook(path, data_only=True)
-    ws = wb.active
-
+def _read_rows_from_worksheet(ws: Any) -> list[dict[str, Any]]:
     headers = {}
     for col_idx in range(1, ws.max_column + 1):
         value = _to_text(ws.cell(HEADER_ROW, col_idx).value)
@@ -153,15 +160,9 @@ def import_phoneme_excel(db: Session, filepath: str) -> dict[str, int]:
         missing = sorted(expected - existing_headers)
         raise ValueError(f'Workbook missing expected headers: {missing}')
 
-    records_processed = 0
-    created = 0
-    updated = 0
-
-    assignee_names = set()
-    processed_records: list[Record] = []
-
     header_to_col = {name: idx for idx, name in headers.items()}
-    stage_by_code = {item.code: item for item in active_stages}
+    city_col = header_to_col.get('City')
+    rows: list[dict[str, Any]] = []
 
     for row_idx in range(DATA_START_ROW, ws.max_row + 1):
         row_values = {name: ws.cell(row_idx, idx).value for name, idx in header_to_col.items()}
@@ -170,86 +171,209 @@ def import_phoneme_excel(db: Session, filepath: str) -> dict[str, int]:
 
         po_status_raw = _to_text(row_values.get('PO STATUS'))
         assignee_hint = _normalize_name(po_status_raw) if po_status_raw and not _is_default_status(po_status_raw) else None
+        rows.append(
+            {
+                'source_row': row_idx,
+                'sl_no': _to_text(row_values.get('Sl.no')),
+                'list_type': _to_text(row_values.get('List Type')),
+                'type': _to_text(row_values.get('Type')),
+                'po_status_raw': po_status_raw,
+                'custodian_code': _to_text(row_values.get('Custodian Code')),
+                'unlo_code': _to_text(row_values.get('UNLO Code')),
+                'short_name': _to_text(row_values.get('Short Name')),
+                'custodian_organization': _to_text(row_values.get('Custodian Organization')),
+                'state': _to_text(row_values.get('State')),
+                'site_address': _to_text(row_values.get('Site Address')),
+                'city': _to_text(ws.cell(row_idx, city_col).value) if city_col else _to_text(ws.cell(row_idx, 12).value),
+                'pincode': _to_text(row_values.get('Pincode')),
+                'category_of_site': _to_text(row_values.get('Category of Site')),
+                'custodian_contact_person_name': _to_text(row_values.get('Custodian Contact Person Name')),
+                'custodian_contact_person_number': _to_text(row_values.get('Custodian Contact Person Number')),
+                'custodian_email': _to_text(row_values.get('Custodian Email')),
+                'customer_name': _to_text(row_values.get('Customer Name')),
+                'mobile_no': _to_text(row_values.get('Mobile No')),
+                'client_email': _to_text(row_values.get('Email id')),
+                'assignee_name_hint': assignee_hint,
+                'stage_flags': {
+                    stage_code: _to_bool(row_values.get(excel_key))
+                    for excel_key, stage_code in EXCEL_STAGE_MAP.items()
+                },
+            }
+        )
+
+    return rows
+
+
+def _analyze_rows(db: Session, rows: list[dict[str, Any]]) -> dict[str, Any]:
+    existing_rows = db.query(Record).all()
+    existing_source_rows = {item.source_row for item in existing_rows}
+    existing_keys: set[tuple[str, ...]] = set()
+    for item in existing_rows:
+        key = _duplicate_key_from_values(
+            {
+                'sl_no': item.sl_no,
+                'custodian_code': item.custodian_code,
+                'unlo_code': item.unlo_code,
+                'short_name': item.short_name,
+                'custodian_organization': item.custodian_organization,
+                'state': item.state,
+                'site_address': item.site_address,
+                'pincode': item.pincode,
+            }
+        )
+        if key:
+            existing_keys.add(key)
+
+    seen_upload_keys: set[tuple[str, ...]] = set()
+    duplicate_rows = 0
+    analyzed_rows: list[dict[str, Any]] = []
+    for row in rows:
+        reasons: list[str] = []
+        if row['source_row'] in existing_source_rows:
+            reasons.append('EXISTING_SOURCE_ROW')
+
+        dedupe_key = _duplicate_key_from_values(row)
+        if dedupe_key and dedupe_key in existing_keys:
+            reasons.append('EXISTING_DATA')
+        if dedupe_key and dedupe_key in seen_upload_keys:
+            reasons.append('DUPLICATE_IN_FILE')
+        if dedupe_key:
+            seen_upload_keys.add(dedupe_key)
+
+        duplicate = len(reasons) > 0
+        if duplicate:
+            duplicate_rows += 1
+        analyzed_rows.append({**row, 'duplicate': duplicate, 'duplicate_reasons': reasons})
+
+    return {
+        'rows': analyzed_rows,
+        'total_rows': len(rows),
+        'duplicate_rows': duplicate_rows,
+        'insertable_rows': len(rows) - duplicate_rows,
+    }
+
+
+def analyze_phoneme_excel_bytes(db: Session, file_bytes: bytes, preview_limit: int = 200) -> dict[str, Any]:
+    ensure_default_stages(db)
+    wb = load_workbook(filename=BytesIO(file_bytes), data_only=True)
+    ws = wb.active
+    analyzed = _analyze_rows(db, _read_rows_from_worksheet(ws))
+
+    preview_rows = [
+        {
+            'source_row': row['source_row'],
+            'sl_no': row['sl_no'],
+            'short_name': row['short_name'],
+            'custodian_organization': row['custodian_organization'],
+            'state': row['state'],
+            'custodian_code': row['custodian_code'],
+            'unlo_code': row['unlo_code'],
+            'duplicate': row['duplicate'],
+            'duplicate_reasons': row['duplicate_reasons'],
+        }
+        for row in analyzed['rows'][: max(1, preview_limit)]
+    ]
+    return {
+        'total_rows': analyzed['total_rows'],
+        'duplicate_rows': analyzed['duplicate_rows'],
+        'insertable_rows': analyzed['insertable_rows'],
+        'preview_rows': preview_rows,
+    }
+
+
+def import_phoneme_excel_bytes(db: Session, file_bytes: bytes) -> dict[str, int]:
+    ensure_default_stages(db)
+    active_stages = get_active_stages(db)
+    stage_by_code = {item.code: item for item in active_stages}
+
+    wb = load_workbook(filename=BytesIO(file_bytes), data_only=True)
+    ws = wb.active
+    analyzed = _analyze_rows(db, _read_rows_from_worksheet(ws))
+
+    assignee_names = set()
+    created_records: list[Record] = []
+    created = 0
+    for row in analyzed['rows']:
+        if row['duplicate']:
+            continue
+
+        assignee_hint = row.get('assignee_name_hint')
         if assignee_hint:
             assignee_names.add(assignee_hint)
 
-        existing = db.query(Record).filter(Record.source_row == row_idx).one_or_none()
+        record = Record(
+            source_row=row['source_row'],
+            sl_no=row['sl_no'],
+            list_type=row['list_type'],
+            type=row['type'],
+            po_status_raw=row['po_status_raw'],
+            custodian_code=row['custodian_code'],
+            unlo_code=row['unlo_code'],
+            short_name=row['short_name'],
+            custodian_organization=row['custodian_organization'],
+            state=row['state'],
+            site_address=row['site_address'],
+            city=row['city'],
+            pincode=row['pincode'],
+            category_of_site=row['category_of_site'],
+            custodian_contact_person_name=row['custodian_contact_person_name'],
+            custodian_contact_person_number=row['custodian_contact_person_number'],
+            custodian_email=row['custodian_email'],
+            customer_name=row['customer_name'],
+            mobile_no=row['mobile_no'],
+            client_email=row['client_email'],
+            assignee_name_hint=assignee_hint,
+            assignee_id=None,
+            email_alert_pending=False,
+            last_email_alert_at=None,
+        )
+        db.add(record)
+        db.flush()
+        created += 1
+        created_records.append(record)
 
-        if existing is None:
-            existing = Record(source_row=row_idx)
-            db.add(existing)
-            db.flush()
-            created += 1
-        else:
-            updated += 1
-
-        # Overwrite behavior: source excel is authoritative.
-        existing.sl_no = _to_text(row_values.get('Sl.no'))
-        existing.list_type = _to_text(row_values.get('List Type'))
-        existing.type = _to_text(row_values.get('Type'))
-        existing.po_status_raw = po_status_raw
-        existing.custodian_code = _to_text(row_values.get('Custodian Code'))
-        existing.unlo_code = _to_text(row_values.get('UNLO Code'))
-        existing.short_name = _to_text(row_values.get('Short Name'))
-        existing.custodian_organization = _to_text(row_values.get('Custodian Organization'))
-        existing.state = _to_text(row_values.get('State'))
-        existing.site_address = _to_text(row_values.get('Site Address'))
-        existing.city = _to_text(ws.cell(row_idx, 12).value)
-        existing.pincode = _to_text(row_values.get('Pincode'))
-        existing.category_of_site = _to_text(row_values.get('Category of Site'))
-        existing.custodian_contact_person_name = _to_text(row_values.get('Custodian Contact Person Name'))
-        existing.custodian_contact_person_number = _to_text(row_values.get('Custodian Contact Person Number'))
-        existing.custodian_email = _to_text(row_values.get('Custodian Email'))
-
-        existing.customer_name = _to_text(row_values.get('Customer Name'))
-        existing.mobile_no = _to_text(row_values.get('Mobile No'))
-        existing.client_email = _to_text(row_values.get('Email id'))
-        existing.assignee_name_hint = assignee_hint
-        existing.assignee_id = None
-        existing.email_alert_pending = False
-        existing.last_email_alert_at = None
-
-        ensure_record_stage_rows(db, existing, active_stages)
+        ensure_record_stage_rows(db, record, active_stages)
         stage_rows = {
             item.stage.code: item
             for item in (
                 db.query(RecordStageStatus)
                 .join(StageDefinition, StageDefinition.id == RecordStageStatus.stage_id)
-                .filter(RecordStageStatus.record_id == existing.id, StageDefinition.is_active.is_(True))
+                .filter(RecordStageStatus.record_id == record.id, StageDefinition.is_active.is_(True))
                 .all()
             )
         }
 
-        for excel_key, stage_code in EXCEL_STAGE_MAP.items():
+        for stage_code, completed in row['stage_flags'].items():
             stage_obj = stage_by_code.get(stage_code)
             stage_row = stage_rows.get(stage_code)
             if not stage_obj or not stage_row:
                 continue
-
-            completed = _to_bool(row_values.get(excel_key))
             stage_row.is_completed = completed
             stage_row.completed_at = datetime.now(timezone.utc) if completed else None
             stage_row.notes = None
 
-        existing.status = derive_status(existing)
-
-        processed_records.append(existing)
-        records_processed += 1
+        record.status = derive_status(record)
 
     assignees_created = ensure_assignee_users(db, assignee_names)
-
-    for item in processed_records:
+    for item in created_records:
         if item.assignee_name_hint:
             assignee = _assignee_by_name(db, item.assignee_name_hint)
             item.assignee_id = assignee.id if assignee else None
-        else:
-            item.assignee_id = None
 
     db.commit()
 
     return {
-        'imported': records_processed,
+        'imported': created,
         'created': created,
-        'updated': updated,
+        'updated': 0,
         'assignees_created': assignees_created,
+        'skipped_duplicates': analyzed['duplicate_rows'],
     }
+
+
+def import_phoneme_excel(db: Session, filepath: str) -> dict[str, int]:
+    path = Path(filepath)
+    if not path.exists():
+        raise FileNotFoundError(f'File not found: {path}')
+    with path.open('rb') as fh:
+        return import_phoneme_excel_bytes(db, fh.read())

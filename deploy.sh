@@ -68,7 +68,7 @@ install_dependencies() {
   fi
 
   log "Installing base dependencies using ${pkg_manager}."
-  "${pkg_manager}" install -y git nginx "${PYTHON_BIN}" python3-pip nodejs npm curl
+  "${pkg_manager}" install -y git nginx "${PYTHON_BIN}" python3-pip nodejs curl
 }
 
 check_node_version() {
@@ -180,6 +180,9 @@ setup_backend() {
   if [[ ! -f .env ]]; then
     fail "Missing ${BACKEND_DIR}/.env. Add backend/.env to the project before deployment."
   fi
+
+  # Remove UTF-8 BOM if present; systemd EnvironmentFile rejects keys with BOM.
+  sed -i '1s/^\xEF\xBB\xBF//' .env
 
   set_env_force "APP_NAME" "Cibics Tracking API" .env
   set_env_force "API_V1_PREFIX" "${API_PREFIX}" .env
@@ -325,7 +328,17 @@ setup_nginx() {
 
 verify_services() {
   log "Verifying backend health endpoint."
-  curl -fsS "http://127.0.0.1:${BACKEND_PORT}/health" >/dev/null
+  local ok=0
+  for _ in $(seq 1 30); do
+    if curl -fsS "http://127.0.0.1:${BACKEND_PORT}${API_PREFIX}/health" >/dev/null; then
+      ok=1
+      break
+    fi
+    sleep 1
+  done
+  if [[ "${ok}" -ne 1 ]]; then
+    fail "Backend health check failed at http://127.0.0.1:${BACKEND_PORT}${API_PREFIX}/health"
+  fi
 
   log "Backend service status:"
   systemctl --no-pager --full status "${SERVICE_NAME}" | sed -n '1,8p'
@@ -341,6 +354,13 @@ verify_services() {
 
 main() {
   require_root
+
+  # Prefer Python 3.11 on CentOS/RHEL when available.
+  if [[ "${PYTHON_BIN}" == "python3" ]] && command_exists python3.11; then
+    PYTHON_BIN="python3.11"
+    log "Detected python3.11. Using PYTHON_BIN=${PYTHON_BIN}."
+  fi
+
   install_dependencies
 
   command_exists git || fail "git not found."

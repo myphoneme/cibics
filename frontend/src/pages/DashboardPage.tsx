@@ -3,12 +3,15 @@
 import { useAuth } from '../auth/AuthContext';
 import { api } from '../api/client';
 import { ShellLayout } from '../components/ShellLayout';
+import { useToast } from '../components/ToastProvider';
 import type { AssigneeSummary, DashboardSummary, StatusSummary } from '../types';
+import { getApiErrorMessage } from '../utils/errors';
 
 const TABLE_PAGE_SIZE = 10;
 
 export function DashboardPage() {
   const { user } = useAuth();
+  const toast = useToast();
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [assigneeSummary, setAssigneeSummary] = useState<AssigneeSummary[]>([]);
   const [statusSummary, setStatusSummary] = useState<StatusSummary[]>([]);
@@ -35,18 +38,22 @@ export function DashboardPage() {
   }, [assigneePage, assigneePages]);
 
   async function loadData() {
-    const [summaryRes, statusRes] = await Promise.all([
-      api.get<DashboardSummary>('/dashboard/summary'),
-      api.get<StatusSummary[]>('/dashboard/by-status'),
-    ]);
+    try {
+      const [summaryRes, statusRes] = await Promise.all([
+        api.get<DashboardSummary>('/dashboard/summary'),
+        api.get<StatusSummary[]>('/dashboard/by-status'),
+      ]);
 
-    setSummary(summaryRes.data);
-    setStatusSummary(statusRes.data);
+      setSummary(summaryRes.data);
+      setStatusSummary(statusRes.data);
 
-    if (user?.role !== 'ASSIGNEE') {
-      const assigneeRes = await api.get<AssigneeSummary[]>('/dashboard/by-assignee');
-      setAssigneeSummary(assigneeRes.data);
-      setAssigneePage(1);
+      if (user?.role !== 'ASSIGNEE') {
+        const assigneeRes = await api.get<AssigneeSummary[]>('/dashboard/by-assignee');
+        setAssigneeSummary(assigneeRes.data);
+        setAssigneePage(1);
+      }
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to load dashboard data'));
     }
   }
 
