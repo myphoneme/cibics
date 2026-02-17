@@ -95,6 +95,17 @@ export function UsersPage() {
     }
   }
 
+  async function updateUserRole(item: User, nextRole: Role) {
+    if (item.role === nextRole) return;
+    try {
+      await api.patch(`/users/${item.id}`, { role: nextRole });
+      await loadUsers();
+      toast.success(`Role updated for ${item.full_name}`);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to update user role'));
+    }
+  }
+
   async function deleteUser(item: User) {
     const ok = window.confirm(`Delete user "${item.full_name}" (${item.email})?`);
     if (!ok) return;
@@ -272,7 +283,17 @@ export function UsersPage() {
                     <tr key={item.id}>
                       <td>{item.full_name}</td>
                       <td>{item.email}</td>
-                      <td>{item.role}</td>
+                      <td>
+                        <select
+                          value={item.role}
+                          onChange={(e) => updateUserRole(item, e.target.value as Role)}
+                          disabled={item.id === user?.id}
+                        >
+                          <option value="ASSIGNEE">ASSIGNEE</option>
+                          <option value="EMAIL_TEAM">EMAIL_TEAM</option>
+                          <option value="SUPER_ADMIN">SUPER_ADMIN</option>
+                        </select>
+                      </td>
                       <td>{item.is_active ? 'Yes' : 'No'}</td>
                       <td>
                         <label className="checkbox-inline">

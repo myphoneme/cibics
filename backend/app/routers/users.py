@@ -99,6 +99,22 @@ def update_user(
 
     data = payload.model_dump(exclude_unset=True)
 
+    if 'role' in data and data['role'] != user.role and user.role == Role.SUPER_ADMIN:
+        active_super_admins = (
+            db.query(User)
+            .filter(
+                User.role == Role.SUPER_ADMIN,
+                User.is_active.is_(True),
+                User.deleted_at.is_(None),
+            )
+            .count()
+        )
+        if active_super_admins <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail='At least one active super admin must remain',
+            )
+
     if 'email' in data:
         conflict = db.query(User).filter(User.email == data['email'], User.id != user_id).first()
         if conflict:
