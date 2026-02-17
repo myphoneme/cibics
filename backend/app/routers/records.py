@@ -426,10 +426,11 @@ def patch_record(
         record.last_email_alert_at = datetime.now(timezone.utc)
 
         recipients = _gather_recipients(db)
-        subject = f'Email Captured: {record.short_name or record.custodian_organization or record.id}'
+        subject = f'CIBICS : New Client Email Updated Record id : {record.id}'
         body = (
             f'Record ID: {record.id}\n'
             f'Source Row: {record.source_row}\n'
+            f'Updated By: {current_user.full_name}\n'
             f'Assignee: {record.assignee.full_name if record.assignee else record.assignee_name_hint or "Unassigned"}\n'
             f'Customer Name: {record.customer_name or ""}\n'
             f'Mobile No: {record.mobile_no or ""}\n'

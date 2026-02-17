@@ -50,7 +50,7 @@ def by_assignee(
 ):
     assignees = (
         db.query(User)
-        .filter(User.role == Role.ASSIGNEE, User.is_active.is_(True))
+        .filter(User.role.in_([Role.ASSIGNEE, Role.SUPER_ADMIN]), User.is_active.is_(True))
         .order_by(User.full_name.asc())
         .all()
     )

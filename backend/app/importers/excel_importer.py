@@ -82,7 +82,7 @@ def ensure_assignee_users(db: Session, names: set[str]) -> int:
     created = 0
     existing_names = {
         _normalize_name(name).lower()
-        for (name,) in db.query(User.full_name).filter(User.role == Role.ASSIGNEE).all()
+        for (name,) in db.query(User.full_name).filter(User.role.in_([Role.ASSIGNEE, Role.SUPER_ADMIN])).all()
     }
 
     for raw_name in names:
@@ -122,7 +122,7 @@ def _assignee_by_name(db: Session, name: str | None) -> User | None:
 
     return (
         db.query(User)
-        .filter(User.role == Role.ASSIGNEE)
+        .filter(User.role.in_([Role.ASSIGNEE, Role.SUPER_ADMIN]))
         .filter(func.lower(User.full_name) == normalized.lower())
         .first()
     )
