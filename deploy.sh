@@ -140,7 +140,7 @@ update_frontend() {
   ok "Frontend dependencies installed successfully"
 
   step "Building Frontend"
-  npm run build
+  VITE_API_URL="${VITE_API_URL:-${API_PREFIX}}" npm run build
   ok "Frontend build completed"
 
   if [[ -n "${FRONTEND_SERVICE_NAME}" ]]; then
