@@ -70,6 +70,8 @@ def by_assignee(
     for assignee in assignees:
         rows = grouped.get(assignee.id, [])
         total = len(rows)
+        if assignee.role == Role.SUPER_ADMIN and total == 0:
+            continue
         with_email = sum(1 for item in rows if item.client_email)
         alerts_pending = sum(1 for item in rows if item.email_alert_pending)
         po_received = sum(1 for item in rows if _has_stage(item, 'PO_RECEIVED'))
