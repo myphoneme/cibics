@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models import Record, RecordStageStatus, Role, StageDefinition, User
 from app.security import get_password_hash
+from app.services.po_status import is_po_received_raw
 from app.services.stages import ensure_default_stages, ensure_record_stage_rows, get_active_stages
 from app.services.status import derive_status
 
@@ -68,9 +69,7 @@ def _slugify_name(name: str) -> str:
 def _is_default_status(value: str | None) -> bool:
     if not value:
         return True
-    normalized = value.strip().lower().replace('-', ' ').replace('_', ' ')
-    normalized = ' '.join(normalized.split())
-    return normalized in {'po received', 'po recieve', 'po recieved', 'po-received'}
+    return is_po_received_raw(value)
 
 
 def _duplicate_key_from_values(values: dict[str, Any]) -> tuple[str, ...] | None:
@@ -171,6 +170,13 @@ def _read_rows_from_worksheet(ws: Any) -> list[dict[str, Any]]:
 
         po_status_raw = _to_text(row_values.get('PO STATUS'))
         assignee_hint = _normalize_name(po_status_raw) if po_status_raw and not _is_default_status(po_status_raw) else None
+        stage_flags = {
+            stage_code: _to_bool(row_values.get(excel_key))
+            for excel_key, stage_code in EXCEL_STAGE_MAP.items()
+        }
+        if is_po_received_raw(po_status_raw):
+            stage_flags['PO_RECEIVED'] = True
+
         rows.append(
             {
                 'source_row': row_idx,
@@ -194,10 +200,7 @@ def _read_rows_from_worksheet(ws: Any) -> list[dict[str, Any]]:
                 'mobile_no': _to_text(row_values.get('Mobile No')),
                 'client_email': _to_text(row_values.get('Email id')),
                 'assignee_name_hint': assignee_hint,
-                'stage_flags': {
-                    stage_code: _to_bool(row_values.get(excel_key))
-                    for excel_key, stage_code in EXCEL_STAGE_MAP.items()
-                },
+                'stage_flags': stage_flags,
             }
         )
 

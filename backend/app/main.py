@@ -6,7 +6,7 @@ from app.database import Base, engine
 from app.models import Role, User
 from app.routers import auth, dashboard, records, users
 from app.security import get_password_hash
-from app.services.stages import ensure_default_stages
+from app.services.stages import ensure_default_stages, sync_po_received_from_raw
 
 settings = get_settings()
 
@@ -43,6 +43,7 @@ def on_startup():
                 )
             )
         ensure_default_stages(db)
+        sync_po_received_from_raw(db)
         db.commit()
     finally:
         db.close()

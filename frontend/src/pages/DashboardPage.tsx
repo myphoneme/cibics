@@ -21,6 +21,10 @@ export function DashboardPage() {
     () => Math.max(1, Math.ceil(assigneeSummary.length / TABLE_PAGE_SIZE)),
     [assigneeSummary.length],
   );
+  const poReceivedCount = useMemo(
+    () => statusSummary.find((item) => item.status === 'PO_RECEIVED')?.count ?? 0,
+    [statusSummary],
+  );
 
   const visibleAssignees = useMemo(() => {
     const start = (assigneePage - 1) * TABLE_PAGE_SIZE;
@@ -74,8 +78,8 @@ export function DashboardPage() {
           icon={<IconBell />}
         />
         <Card
-          title="Email Alerts Pending"
-          value={summary?.alerts_pending ?? 0}
+          title="PO Recieved"
+          value={poReceivedCount}
           tone="danger"
           icon={<IconAlert />}
         />

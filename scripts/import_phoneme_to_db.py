@@ -54,7 +54,7 @@ def _is_default_status(value: str | None) -> bool:
         return True
     normalized = value.strip().lower().replace('-', ' ').replace('_', ' ')
     normalized = ' '.join(normalized.split())
-    return normalized in {'po received', 'po recieve', 'po recieved', 'po-received'}
+    return normalized in {'po received', 'po recieve', 'po recieved', 'po recived'}
 
 
 def _split_ref(ref: str):
@@ -142,6 +142,13 @@ def main():
         if assignee_hint:
             assignee_names.add(assignee_hint)
 
+        stage_flags = {
+            stage_code: _to_bool(by_header.get(excel_col_name))
+            for excel_col_name, stage_code in EXCEL_STAGE_MAP.items()
+        }
+        if po_status_raw and _is_default_status(po_status_raw):
+            stage_flags['PO_RECEIVED'] = True
+
         record = {
             'source_row': row_idx,
             'sl_no': by_header.get('Sl.no'),
@@ -164,10 +171,7 @@ def main():
             'mobile_no': by_header.get('Mobile No'),
             'client_email': by_header.get('Email id'),
             'assignee_name_hint': assignee_hint,
-            'stages': {
-                stage_code: _to_bool(by_header.get(excel_col_name))
-                for excel_col_name, stage_code in EXCEL_STAGE_MAP.items()
-            },
+            'stages': stage_flags,
         }
         records.append(record)
 

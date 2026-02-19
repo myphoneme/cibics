@@ -8,11 +8,14 @@ from app.database import get_db
 from app.deps import require_roles
 from app.models import Record, RecordStageStatus, Role, User
 from app.schemas import AssigneeSummary, DashboardSummary, StatusSummary
+from app.services.po_status import is_po_received_raw
 
 router = APIRouter(prefix='/dashboard', tags=['dashboard'])
 
 
 def _has_stage(record: Record, stage_code: str) -> bool:
+    if stage_code == 'PO_RECEIVED' and is_po_received_raw(record.po_status_raw):
+        return True
     return any(
         item.is_completed and item.stage and item.stage.code == stage_code and item.stage.is_active
         for item in record.stage_statuses
@@ -30,7 +33,12 @@ def summary(
 
     total = base_query.count()
     with_email = base_query.filter(Record.client_email.is_not(None), Record.client_email != '').count()
-    without_email = total - with_email
+    without_email = (
+        base_query
+        .filter((Record.client_email.is_(None)) | (Record.client_email == ''))
+        .filter(Record.status != 'PO_RECEIVED')
+        .count()
+    )
     pending = base_query.filter(Record.email_alert_pending.is_(True)).count()
     unassigned = base_query.filter(Record.assignee_id.is_(None)).count()
 
