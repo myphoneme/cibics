@@ -225,15 +225,6 @@ def list_records(
 ):
     filters = [Record.is_active.is_(True)]
 
-    if current_user.role == Role.ASSIGNEE:
-        if assignee_id is not None and assignee_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail='You are not authorized to filter records for another assignee',
-            )
-        filters.append(Record.assignee_id == current_user.id)
-        assignee_id = None
-
     if assignee_id is not None:
         filters.append(Record.assignee_id == assignee_id)
     if status_filter is not None:
@@ -313,9 +304,6 @@ def get_record(
     if not record:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Record not found')
 
-    if current_user.role == Role.ASSIGNEE and record.assignee_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed for this record')
-
     return _serialize_record(record)
 
 
@@ -346,7 +334,12 @@ def patch_record(
     if current_user.role == Role.ASSIGNEE:
         if record.assignee_id != current_user.id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='Not allowed for this record')
-        disallowed = set(data.keys()) - ASSIGNEE_ALLOWED
+
+        # Dynamically expand allowed fields for record owners
+        local_assignee_allowed = ASSIGNEE_ALLOWED.copy()
+        local_assignee_allowed.update({'stage_updates', 'email_alert_pending', 'assignee_id'})
+
+        disallowed = set(data.keys()) - local_assignee_allowed
         if disallowed:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

@@ -183,7 +183,7 @@ def list_assignees(
 ):
     return (
         db.query(User)
-        .filter(User.role == Role.ASSIGNEE, User.is_active.is_(True), User.deleted_at.is_(None))
+        .filter(User.role.in_([Role.ASSIGNEE, Role.SUPER_ADMIN]), User.is_active.is_(True), User.deleted_at.is_(None))
         .order_by(User.full_name.asc())
         .all()
     )

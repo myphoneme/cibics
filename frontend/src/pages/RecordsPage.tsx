@@ -127,12 +127,6 @@ export function RecordsPage() {
   }, [page, q, statusFilter, assigneeFilter, alertOnly]);
 
   useEffect(() => {
-    if (user?.role === 'ASSIGNEE') {
-      setAssigneeFilter(user.id);
-    }
-  }, [user?.id, user?.role]);
-
-  useEffect(() => {
     function updateWidth() {
       const table = tableWrapRef.current?.querySelector('table');
       if (!table || !tableWrapRef.current) return;
@@ -210,8 +204,73 @@ export function RecordsPage() {
     });
   }
 
+  function handleOpenEditor(item: RecordItem) {
+    if (!user) {
+      toast.error('You must be logged in to perform this action.');
+      return;
+    }
+
+    // SUPER_ADMIN can always edit
+    if (user.role === 'SUPER_ADMIN') {
+      openEditor(item);
+      return;
+    }
+
+    // ASSIGNEE can only edit their own records
+    if (user.role === 'ASSIGNEE') {
+      if (item.assignee_id === user.id) {
+        openEditor(item);
+      } else {
+        toast.error('You can only edit records assigned to you. Tip: Filter by your name to see your tasks.');
+      }
+      return;
+    }
+
+    // EMAIL_TEAM can edit certain fields on any record. Allow opening editor.
+    if (user.role === 'EMAIL_TEAM') {
+      openEditor(item);
+      return;
+    }
+
+    toast.error('You do not have permission to edit records.');
+  }
+
+  async function handleAcknowledgeAlert(recordId: number) {
+    if (!user) {
+      toast.error('You must be logged in to perform this action.');
+      return;
+    }
+
+    // Only SUPER_ADMIN and EMAIL_TEAM can acknowledge alerts
+    if (user.role === 'SUPER_ADMIN' || user.role === 'EMAIL_TEAM') {
+      await acknowledgeAlert(recordId);
+    } else {
+      toast.error('You do not have permission to acknowledge alerts.');
+    }
+  }
+
+  async function handleDeleteRecord(item: RecordItem) {
+    if (!user) {
+      toast.error('You must be logged in to perform this action.');
+      return;
+    }
+
+    // Only SUPER_ADMIN can delete records
+    if (user.role === 'SUPER_ADMIN') {
+      await deleteRecord(item);
+    } else {
+      toast.error('You do not have permission to delete records.');
+    }
+  }
+
   async function saveDraft() {
-    if (!selected || !draft) return;
+    if (!selected || !draft || !user) return;
+
+    // Client-side permission check for saving a draft
+    if (user.role === 'ASSIGNEE' && selected.assignee_id !== user.id) {
+      toast.error('You can only edit records assigned to you. Tip: Filter by your name to see your tasks.');
+      return;
+    }
 
     const payload: Record<string, unknown> = {};
 
@@ -220,6 +279,16 @@ export function RecordsPage() {
       payload.mobile_no = draft.mobile_no;
       payload.client_email = draft.client_email;
       payload.notes = draft.notes;
+      // Also allow stage_updates, email_alert_pending, and assignee_id for assignee's own records
+      if (selected.assignee_id === user.id) {
+        payload.email_alert_pending = draft.email_alert_pending;
+        payload.assignee_id = draft.assignee_id === '' ? null : draft.assignee_id;
+        payload.stage_updates = stages.map((stage) => ({
+          stage_id: stage.id,
+          is_completed: draft.stage_states[stage.id]?.is_completed || false,
+          notes: draft.stage_states[stage.id]?.notes || null,
+        }));
+      }
     }
 
     if (user?.role === 'SUPER_ADMIN') {
@@ -385,6 +454,8 @@ export function RecordsPage() {
     }
   }
 
+  const isAssignee = user?.role === 'ASSIGNEE';
+
   return (
     <ShellLayout>
       <section className="panel">
@@ -419,20 +490,13 @@ export function RecordsPage() {
               setPage(1);
               setAssigneeFilter(e.target.value ? Number(e.target.value) : '');
             }}
-            disabled={user?.role === 'ASSIGNEE'}
           >
-            {user?.role === 'ASSIGNEE' ? (
-              <option value={user.id}>{user.full_name}</option>
-            ) : (
-              <>
-                <option value="">All Assignees</option>
-                {assignees.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.full_name}
-                  </option>
-                ))}
-              </>
-            )}
+            <option value="">All Assignees</option>
+            {assignees.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.full_name}
+              </option>
+            ))}
           </select>
 
           <label className="checkbox-inline">
@@ -448,6 +512,8 @@ export function RecordsPage() {
           </label>
         </div>
 
+        {/* Commenting out Add Stage functionality for sometime as per request */}
+        {/*
         {user?.role === 'SUPER_ADMIN' ? (
           <>
             <div className="records-toolbar">
@@ -472,6 +538,7 @@ export function RecordsPage() {
             </div>
           </>
         ) : null}
+        */}
 
         <div className="column-tools">
           <label className="checkbox-inline">
@@ -524,23 +591,21 @@ export function RecordsPage() {
                     <td key={`${item.id}-${column}`}>{renderCell(item, column)}</td>
                   ))}
                   <td className="action-col">
-                    <button className="btn btn-sm" type="button" onClick={() => openEditor(item)}>
+                    <button className="btn btn-sm" type="button" onClick={() => handleOpenEditor(item)}>
                       Action
                     </button>
-                    {item.email_alert_pending && user?.role !== 'ASSIGNEE' ? (
+                    {item.email_alert_pending ? ( // Still show "Ack" only if alert is pending
                       <button
                         className="btn btn-sm btn-outline"
                         type="button"
-                        onClick={() => acknowledgeAlert(item.id)}
+                        onClick={() => handleAcknowledgeAlert(item.id)}
                       >
                         Ack
                       </button>
                     ) : null}
-                    {user?.role === 'SUPER_ADMIN' ? (
-                      <button className="btn btn-sm btn-outline" type="button" onClick={() => deleteRecord(item)}>
-                        Delete
-                      </button>
-                    ) : null}
+                    <button className="btn btn-sm btn-outline" type="button" onClick={() => handleDeleteRecord(item)}>
+                      Delete
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -602,58 +667,105 @@ export function RecordsPage() {
                 <input value={draft.mobile_no} onChange={(e) => setDraft({ ...draft, mobile_no: e.target.value })} />
               </label>
 
-              {(user?.role === 'SUPER_ADMIN' || user?.role === 'EMAIL_TEAM') && (
-                <>
-                  {stages.map((stage) => (
-                    <label className="checkbox-inline" key={stage.id}>
-                      <input
-                        type="checkbox"
-                        checked={draft.stage_states[stage.id]?.is_completed || false}
-                        onChange={(e) =>
-                          setDraft({
-                            ...draft,
-                            stage_states: {
-                              ...draft.stage_states,
-                              [stage.id]: {
-                                is_completed: e.target.checked,
-                                notes: draft.stage_states[stage.id]?.notes || '',
-                              },
-                            },
-                          })
-                        }
-                      />
-                      {stage.name}
-                    </label>
-                  ))}
-                  <label className="checkbox-inline">
-                    <input
-                      type="checkbox"
-                      checked={draft.email_alert_pending}
-                      onChange={(e) => setDraft({ ...draft, email_alert_pending: e.target.checked })}
-                    />
-                    Email Alert Pending
-                  </label>
-                </>
-              )}
+                              <>
 
-              {user?.role === 'SUPER_ADMIN' ? (
-                <label>
-                  Assignee
-                  <select
-                    value={draft.assignee_id}
-                    onChange={(e) =>
-                      setDraft({ ...draft, assignee_id: e.target.value ? Number(e.target.value) : '' })
-                    }
-                  >
-                    <option value="">Unassigned</option>
-                    {assignees.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.full_name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
+                                {stages.map((stage) => (
+
+                                  <label className="checkbox-inline" key={stage.id}>
+
+                                    <input
+
+                                      type="checkbox"
+
+                                      checked={draft.stage_states[stage.id]?.is_completed || false}
+
+                                      onChange={(e) =>
+
+                                        setDraft({
+
+                                          ...draft,
+
+                                          stage_states: {
+
+                                            ...draft.stage_states,
+
+                                            [stage.id]: {
+
+                                              is_completed: e.target.checked,
+
+                                              notes: draft.stage_states[stage.id]?.notes || '',
+
+                                            },
+
+                                          },
+
+                                        })
+
+                                      }
+
+                                      disabled={isAssignee && selected.assignee_id !== user.id}
+
+                                    />
+
+                                    {stage.name}
+
+                                  </label>
+
+                                ))}
+
+                                <label className="checkbox-inline">
+
+                                  <input
+
+                                    type="checkbox"
+
+                                    checked={draft.email_alert_pending}
+
+                                    onChange={(e) => setDraft({ ...draft, email_alert_pending: e.target.checked })}
+
+                                    disabled={isAssignee && selected.assignee_id !== user.id}
+
+                                  />
+
+                                  Email Alert Pending
+
+                                </label>
+
+                              </>
+
+              
+
+                            <label>
+
+                              Assignee
+
+                              <select
+
+                                value={draft.assignee_id}
+
+                                onChange={(e) =>
+
+                                  setDraft({ ...draft, assignee_id: e.target.value ? Number(e.target.value) : '' })
+
+                                }
+
+                                disabled={isAssignee && selected.assignee_id !== user.id}
+
+                              >                    <option value="">Unassigned</option>
+
+                                  {assignees.map((item) => (
+
+                                    <option key={item.id} value={item.id}>
+
+                                      {item.full_name}
+
+                                    </option>
+
+                                  ))}
+
+                                </select>
+
+                              </label>
 
               <label className="full-width">
                 Customer Comments / Notes

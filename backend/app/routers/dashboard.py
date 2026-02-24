@@ -28,8 +28,6 @@ def summary(
     current_user: User = Depends(require_roles(Role.SUPER_ADMIN, Role.ASSIGNEE, Role.EMAIL_TEAM)),
 ):
     base_query = db.query(Record).filter(Record.is_active.is_(True))
-    if current_user.role == Role.ASSIGNEE:
-        base_query = base_query.filter(Record.assignee_id == current_user.id)
 
     total = base_query.count()
     with_email = base_query.filter(Record.client_email.is_not(None), Record.client_email != '').count()
@@ -54,7 +52,7 @@ def summary(
 @router.get('/by-assignee', response_model=list[AssigneeSummary])
 def by_assignee(
     db: Session = Depends(get_db),
-    _: User = Depends(require_roles(Role.SUPER_ADMIN, Role.EMAIL_TEAM)),
+    _: User = Depends(require_roles(Role.SUPER_ADMIN, Role.ASSIGNEE, Role.EMAIL_TEAM)),
 ):
     assignees = (
         db.query(User)
@@ -112,8 +110,6 @@ def by_status(
     current_user: User = Depends(require_roles(Role.SUPER_ADMIN, Role.ASSIGNEE, Role.EMAIL_TEAM)),
 ):
     query = db.query(Record.status, func.count(Record.id).label('count')).filter(Record.is_active.is_(True))
-    if current_user.role == Role.ASSIGNEE:
-        query = query.filter(Record.assignee_id == current_user.id)
 
     rows = query.group_by(Record.status).order_by(Record.status.asc()).all()
     return [StatusSummary(status=row.status, count=int(row.count)) for row in rows]

@@ -51,11 +51,9 @@ export function DashboardPage() {
       setSummary(summaryRes.data);
       setStatusSummary(Array.isArray(statusRes.data) ? statusRes.data : []);
 
-      if (user?.role !== 'ASSIGNEE') {
-        const assigneeRes = await api.get<AssigneeSummary[]>('/dashboard/by-assignee');
-        setAssigneeSummary(Array.isArray(assigneeRes.data) ? assigneeRes.data : []);
-        setAssigneePage(1);
-      }
+      const assigneeRes = await api.get<AssigneeSummary[]>('/dashboard/by-assignee');
+      setAssigneeSummary(Array.isArray(assigneeRes.data) ? assigneeRes.data : []);
+      setAssigneePage(1);
     } catch (error) {
       toast.error(getApiErrorMessage(error, 'Failed to load dashboard data'));
     }
@@ -97,7 +95,6 @@ export function DashboardPage() {
         </div>
       </section>
 
-      {user?.role !== 'ASSIGNEE' ? (
         <section className="panel panel-accent">
           <h2>Group by Assignee</h2>
           <div className="table-wrap">
@@ -148,7 +145,6 @@ export function DashboardPage() {
             </button>
           </div>
         </section>
-      ) : null}
     </ShellLayout>
   );
 }
