@@ -25,7 +25,8 @@ backend/venv/
 # Environment / secrets
 .env
 .env.*
-!backend/.env
+
+backend/.env
 credentials.md
 
 # Node / frontend build
