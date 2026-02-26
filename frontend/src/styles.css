@@ -343,6 +343,77 @@ a {
   margin: 0 0 8px;
 }
 
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: -12px -12px 10px;
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 18%, transparent), transparent 55%);
+  border-top-left-radius: 13px;
+  border-top-right-radius: 13px;
+}
+
+.panel-title h2 {
+  margin: 0;
+}
+
+.panel-title .muted {
+  margin-top: 2px;
+  font-size: 12px;
+}
+
+.panel-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.control-sm {
+  padding: 5px 8px;
+  font-size: 11px;
+  border-radius: 9px;
+}
+
+.muted {
+  color: var(--muted);
+  margin: 0;
+}
+
+.cell-hot {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.cell-btn {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-weight: 700;
+  cursor: pointer;
+  padding: 6px 4px;
+}
+
+.cell-btn:hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.cell-zero {
+  color: color-mix(in srgb, var(--muted) 75%, var(--text));
+}
+
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
 .status-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
@@ -576,7 +647,9 @@ textarea {
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  z-index: 80;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(4px);
   display: grid;
   place-items: center;
   padding: 12px;
@@ -588,8 +661,11 @@ textarea {
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: 13px;
-  background: var(--bg-elev);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-elev) 94%, #000), var(--bg-elev));
   padding: 12px;
+  box-shadow:
+    0 22px 70px rgba(0, 0, 0, 0.75),
+    0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .email-edit-field input {

@@ -4,10 +4,17 @@ import { useAuth } from '../auth/AuthContext';
 import { api } from '../api/client';
 import { ShellLayout } from '../components/ShellLayout';
 import { useToast } from '../components/ToastProvider';
-import type { AssigneeSummary, DashboardSummary, StatusSummary } from '../types';
+import type {
+  AssigneeSummary,
+  DashboardSummary,
+  StageProgressDetailResponse,
+  StageProgressResponse,
+  StatusSummary,
+} from '../types';
 import { getApiErrorMessage } from '../utils/errors';
 
 const TABLE_PAGE_SIZE = 10;
+const PROGRESS_DAYS = 7;
 
 export function DashboardPage() {
   const { user } = useAuth();
@@ -16,6 +23,11 @@ export function DashboardPage() {
   const [assigneeSummary, setAssigneeSummary] = useState<AssigneeSummary[]>([]);
   const [statusSummary, setStatusSummary] = useState<StatusSummary[]>([]);
   const [assigneePage, setAssigneePage] = useState(1);
+  const [progressStart, setProgressStart] = useState(() => getWeekStart(new Date()));
+  const [stageProgress, setStageProgress] = useState<StageProgressResponse | null>(null);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailData, setDetailData] = useState<StageProgressDetailResponse | null>(null);
 
   const assigneePages = useMemo(
     () => Math.max(1, Math.ceil(assigneeSummary.length / TABLE_PAGE_SIZE)),
@@ -34,6 +46,10 @@ export function DashboardPage() {
   useEffect(() => {
     void loadData();
   }, []);
+
+  useEffect(() => {
+    void loadStageProgress(progressStart);
+  }, [progressStart]);
 
   useEffect(() => {
     if (assigneePage > assigneePages) {
@@ -59,42 +75,61 @@ export function DashboardPage() {
     }
   }
 
+  async function loadStageProgress(start: Date) {
+    try {
+      const startDate = toIsoDate(start);
+      const { data } = await api.get<StageProgressResponse>('/dashboard/stage-progress', {
+        params: { start_date: startDate, days: PROGRESS_DAYS },
+      });
+      setStageProgress(data);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to load stage progress'));
+    }
+  }
+
+  async function openDetail(day: string, stageKey: string) {
+    if (!day || !stageKey) return;
+    try {
+      setDetailOpen(true);
+      setDetailLoading(true);
+      setDetailData(null);
+      const { data } = await api.get<StageProgressDetailResponse>('/dashboard/stage-progress/details', {
+        params: { day, stage_key: stageKey },
+      });
+      setDetailData(data);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, 'Failed to load details'));
+      setDetailOpen(false);
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
   return (
     <ShellLayout>
       <section className="grid-cards">
         <Card title="Total Records" value={summary?.total_records ?? 0} tone="primary" icon={<IconStack />} />
         <Card
-          title="Client Email Captured"
+          title="Total Email Captured"
           value={summary?.with_client_email ?? 0}
           tone="success"
           icon={<IconMail />}
         />
         <Card
-          title="Need Email Follow-up"
+          title="Need Follow-up for Email (Excl. PO Received)"
           value={summary?.without_client_email ?? 0}
           tone="warning"
           icon={<IconBell />}
         />
         <Card
-          title="PO Recieved"
+          title="Total PO Received"
           value={poReceivedCount}
           tone="danger"
           icon={<IconAlert />}
         />
       </section>
 
-      <section className="panel panel-accent">
-        <h2>Status Breakdown</h2>
-        <div className="status-grid">
-          {statusSummary.map((item) => (
-            <div key={item.status} className="status-item">
-              <span>{item.status.replace(/_/g, ' ')}</span>
-              <strong>{item.count}</strong>
-            </div>
-          ))}
-        </div>
-      </section>
-
+      {user?.role !== 'ASSIGNEE' ? (
         <section className="panel panel-accent">
           <h2>Group by Assignee</h2>
           <div className="table-wrap">
@@ -145,7 +180,210 @@ export function DashboardPage() {
             </button>
           </div>
         </section>
+      ) : null}
+
+      <section className="panel panel-accent">
+        <div className="panel-head">
+          <div className="panel-title">
+            <h2>Daily Stage Progress</h2>
+            <p className="muted">{formatWeekRange(stageProgress?.dates ?? [])}</p>
+          </div>
+          <ProgressControls start={progressStart} onChange={setProgressStart} />
+        </div>
+        <StageProgressTable progress={stageProgress} onCellClick={openDetail} />
+      </section>
+
+      {detailOpen ? (
+        <DetailModal
+          loading={detailLoading}
+          data={detailData}
+          onClose={() => {
+            setDetailOpen(false);
+            setDetailData(null);
+          }}
+        />
+      ) : null}
     </ShellLayout>
+  );
+}
+
+function StageProgressTable({
+  progress,
+  onCellClick,
+}: {
+  progress: StageProgressResponse | null;
+  onCellClick: (day: string, stageKey: string) => void;
+}) {
+  if (!progress) {
+    return <p className="muted">Loading…</p>;
+  }
+
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style={{ width: 220 }}>Stage</th>
+            {progress.dates.map((iso) => (
+              <th key={iso} style={{ whiteSpace: 'nowrap' }}>
+                {formatShortDate(iso)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {progress.rows.map((row) => (
+            <tr key={row.key}>
+              <td>{row.label}</td>
+              {row.counts.map((count, idx) => (
+                <td
+                  key={`${row.key}:${progress.dates[idx]}`}
+                  style={{ textAlign: 'center' }}
+                  className={count > 0 ? 'cell-hot' : undefined}
+                >
+                  {count > 0 ? (
+                    <button
+                      type="button"
+                      className="cell-btn"
+                      onClick={() => onCellClick(progress.dates[idx], row.key)}
+                      title="View details"
+                    >
+                      {count}
+                    </button>
+                  ) : (
+                    <span className="cell-zero">{count}</span>
+                  )}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function DetailModal({
+  loading,
+  data,
+  onClose,
+}: {
+  loading: boolean;
+  data: StageProgressDetailResponse | null;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="modal-card">
+        <div className="modal-head">
+          <div>
+            <h3 style={{ margin: 0 }}>Details</h3>
+            <p className="muted" style={{ marginTop: 2 }}>
+              {data ? `${data.stage_label} • ${data.date}` : 'Loading…'}
+            </p>
+          </div>
+          <button className="btn btn-sm btn-outline" type="button" onClick={onClose}>
+            Close
+          </button>
+        </div>
+
+        {loading ? (
+          <p className="muted">Loading…</p>
+        ) : data && data.items.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Assignee</th>
+                  <th style={{ width: 120, textAlign: 'right' }}>Records</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.items.map((item) => (
+                  <tr key={`${item.assignee_id ?? 'unassigned'}:${item.assignee_name}`}>
+                    <td>{item.assignee_name}</td>
+                    <td style={{ textAlign: 'right' }}>{item.record_count}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="muted">No details found.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ProgressControls({ start, onChange }: { start: Date; onChange: (value: Date) => void }) {
+  const years = useMemo(() => {
+    const current = new Date().getFullYear();
+    return [current - 1, current, current + 1];
+  }, []);
+
+  const month = start.getMonth();
+  const year = start.getFullYear();
+
+  function shiftDays(delta: number) {
+    const next = new Date(start);
+    next.setDate(next.getDate() + delta);
+    onChange(getWeekStart(next));
+  }
+
+  function setToToday() {
+    onChange(getWeekStart(new Date()));
+  }
+
+  function handleMonthChange(nextMonth: number) {
+    const next = new Date(start);
+    next.setFullYear(year);
+    next.setMonth(nextMonth);
+    next.setDate(1);
+    onChange(getWeekStart(next));
+  }
+
+  function handleYearChange(nextYear: number) {
+    const next = new Date(start);
+    next.setFullYear(nextYear);
+    next.setMonth(month);
+    next.setDate(1);
+    onChange(getWeekStart(next));
+  }
+
+  return (
+    <div className="panel-actions">
+      <button className="btn btn-sm btn-outline" type="button" onClick={() => shiftDays(-7)}>
+        Prev Week
+      </button>
+      <button className="btn btn-sm btn-outline" type="button" onClick={setToToday}>
+        This Week
+      </button>
+      <button className="btn btn-sm btn-outline" type="button" onClick={() => shiftDays(7)}>
+        Next Week
+      </button>
+      <select className="control-sm" value={month} onChange={(e) => handleMonthChange(Number(e.target.value))}>
+        {Array.from({ length: 12 }).map((_, idx) => (
+          <option key={idx} value={idx}>
+            {new Date(2000, idx, 1).toLocaleString(undefined, { month: 'short' })}
+          </option>
+        ))}
+      </select>
+      <select className="control-sm" value={year} onChange={(e) => handleYearChange(Number(e.target.value))}>
+        {years.map((y) => (
+          <option key={y} value={y}>
+            {y}
+          </option>
+        ))}
+      </select>
+    </div>
   );
 }
 
@@ -219,4 +457,41 @@ function IconAlert() {
       />
     </svg>
   );
+}
+
+function getWeekStart(value: Date) {
+  const d = new Date(value);
+  const day = d.getDay(); // 0=Sun
+  const diff = (day === 0 ? -6 : 1) - day; // Monday as start
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function toIsoDate(value: Date) {
+  const y = value.getFullYear();
+  const m = String(value.getMonth() + 1).padStart(2, '0');
+  const d = String(value.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function formatShortDate(iso: string) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt.toLocaleDateString(undefined, { weekday: 'short', day: '2-digit' });
+}
+
+function formatWeekRange(dates: string[]) {
+  if (!dates.length) return '';
+  const start = dates[0];
+  const end = dates[dates.length - 1];
+  const startLabel = formatRangeDate(start);
+  const endLabel = formatRangeDate(end);
+  return `${startLabel} – ${endLabel}`;
+}
+
+function formatRangeDate(iso: string) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt.toLocaleDateString(undefined, { month: 'short', day: '2-digit' });
 }

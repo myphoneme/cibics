@@ -67,6 +67,9 @@ export interface DashboardSummary {
   without_client_email: number;
   alerts_pending: number;
   unassigned: number;
+  unassigned_with_client_email: number;
+  recent_email_captured_24h: number;
+  recent_email_updated_24h: number;
 }
 
 export interface AssigneeSummary {
@@ -74,6 +77,8 @@ export interface AssigneeSummary {
   assignee_name: string;
   total: number;
   with_client_email: number;
+  recent_email_captured_24h: number;
+  recent_email_updated_24h: number;
   alerts_pending: number;
   po_received: number;
   proposal_sent: number;
@@ -83,4 +88,30 @@ export interface AssigneeSummary {
 export interface StatusSummary {
   status: string;
   count: number;
+}
+
+export interface StageProgressRow {
+  key: string;
+  label: string;
+  counts: number[];
+}
+
+export interface StageProgressResponse {
+  start_date: string; // YYYY-MM-DD
+  days: number;
+  dates: string[]; // YYYY-MM-DD
+  rows: StageProgressRow[];
+}
+
+export interface StageProgressDetailItem {
+  assignee_id: number | null;
+  assignee_name: string;
+  record_count: number;
+}
+
+export interface StageProgressDetailResponse {
+  date: string; // YYYY-MM-DD
+  stage_key: string;
+  stage_label: string;
+  items: StageProgressDetailItem[];
 }

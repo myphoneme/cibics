@@ -189,6 +189,9 @@ class DashboardSummary(BaseModel):
     without_client_email: int
     alerts_pending: int
     unassigned: int
+    unassigned_with_client_email: int
+    recent_email_captured_24h: int
+    recent_email_updated_24h: int
 
 
 class AssigneeSummary(BaseModel):
@@ -196,6 +199,8 @@ class AssigneeSummary(BaseModel):
     assignee_name: str
     total: int
     with_client_email: int
+    recent_email_captured_24h: int
+    recent_email_updated_24h: int
     alerts_pending: int
     po_received: int
     proposal_sent: int
@@ -205,3 +210,29 @@ class AssigneeSummary(BaseModel):
 class StatusSummary(BaseModel):
     status: str
     count: int
+
+
+class StageProgressRow(BaseModel):
+    key: str
+    label: str
+    counts: list[int]
+
+
+class StageProgressResponse(BaseModel):
+    start_date: str
+    days: int
+    dates: list[str]
+    rows: list[StageProgressRow]
+
+
+class StageProgressDetailItem(BaseModel):
+    assignee_id: int | None
+    assignee_name: str
+    record_count: int
+
+
+class StageProgressDetailResponse(BaseModel):
+    date: str
+    stage_key: str
+    stage_label: str
+    items: list[StageProgressDetailItem]

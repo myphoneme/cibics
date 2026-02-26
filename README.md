@@ -58,6 +58,21 @@ cd backend
 python run.py
 ```
 
+### Sync missing client emails from Excel (optional)
+
+If your DB has fewer `client_email` values than the Excel sheet, run:
+
+```powershell
+# Use the backend venv/python so dependencies are available
+backend\venv\Scripts\python.exe scripts\sync_emails_from_excel.py --excel Phoneme.xlsx
+
+# If "Email id" column is empty, you can fill from "Custodian Email" instead
+backend\venv\Scripts\python.exe scripts\sync_emails_from_excel.py --excel Phoneme.xlsx --header "Custodian Email"
+
+# Preview without writing
+backend\venv\Scripts\python.exe scripts\sync_emails_from_excel.py --excel Phoneme.xlsx --header "Custodian Email" --dry-run
+```
+
 ### Frontend
 
 ```powershell

@@ -39,6 +39,16 @@ DEFAULT_STAGES = [
         'name': 'PO Received',
         'display_order': 60,
     },
+    {
+        'code': 'PAYMENT',
+        'name': 'Payment',
+        'display_order': 70,
+    },
+    {
+        'code': 'IMPLEMENTATION',
+        'name': 'Implementation',
+        'display_order': 80,
+    },
 ]
 
 
